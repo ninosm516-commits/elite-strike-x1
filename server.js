@@ -33,7 +33,13 @@ const ARMAS = [
 const CAB = 2;
 const salas = new Map();
 const perfis = new Map();
+// ===== SISTEMA ADM ELITE STRIKE X1 =====
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const ADMIN_SECRET = process.env.ADMIN_SECRET;
 
+if (!ADMIN_PASSWORD || !ADMIN_SECRET) {
+  console.warn('AVISO: variáveis ADM não configuradas!');
+}
 const ALFA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 const num = (v, a, b, d = 0) =>
