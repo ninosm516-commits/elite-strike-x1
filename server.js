@@ -571,14 +571,24 @@ wss.on('connection', ws => {
         let perfil = perfis.get(id);
 
         if (!perfil) {
-          perfil = {
-            id,
-            nome: nome(d.nome),
-            ws: null,
-            amigos: [],
-            pedidos: []
-          };
-        }
+perfil = {
+id,
+nome: nome(d.nome),
+ws: null,
+amigos: [],
+pedidos: [],
+diamantes: 0,
+skins: [],
+verificado: false,
+correio: []
+};
+}
+
+// Garantir os campos em perfis já existentes
+perfil.diamantes ??= 0;
+perfil.skins ??= [];
+perfil.verificado ??= false;
+perfil.correio ??= [];
 
         if (
           perfil.ws &&
