@@ -486,12 +486,126 @@ function sair(ws, aviso) {
 }
 
 // SERVIDOR HTTP
-const server = http.createServer((req, res) => {
-  if (req.url === '/health' || req.url === '/') {
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+
+  res.setHeader('Cache-Control', 'no-store');
+
+  // Verificação de funcionamento do servidor
+  if (req.method === 'GET' &&
+      (url.pathname === '/' || url.pathname === '/health')) {
     res.writeHead(200, {
-      'Content-Type': 'text/plain; charset=utf-8',
-      'Cache-Control': 'no-store'
+      'Content-Type': 'text/plain; charset=utf-8'
     });
+
+    return res.end(
+      `ELITE STRIKE X1 - Servidor online! Salas: ${salas.size} | Perfis nesta sessão: ${perfis.size}`
+    );
+  }
+
+  // Rota de login do painel ADM
+  if (req.method === 'POST' && url.pathname === '/admin/login') {
+    let body = '';
+
+    try {
+      for await (const chunk of req) {
+        body += chunk;
+
+        if (body.length > 4096) {
+          res.writeHead(413);
+          return res.end('Requisição muito grande');
+        }
+      }
+
+      const dados = JSON.parse(body || '{}');
+
+      if (
+        typeof process.env.ADMIN_PASSWORD !== 'string' ||
+        !process.env.ADMIN_PASSWORD ||
+        typeof process.env.ADMIN_SECRET !== 'string' ||
+        process.env.ADMIN_SECRET.length < 32
+      ) {
+        res.writeHead(500, {
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+
+        return res.end(JSON.stringify({
+          erro: 'Configure ADMIN_PASSWORD e ADMIN_SECRET no Render.'
+        }));
+      }
+
+      const senhaRecebida =
+        typeof dados.senha === 'string' ? dados.senha : '';
+
+      const senhaEsperada = process.env.ADMIN_PASSWORD;
+
+      const senhaRecebidaBuffer = Buffer.from(senhaRecebida);
+      const senhaEsperadaBuffer = Buffer.from(senhaEsperada);
+
+      const senhaValida =
+        senhaRecebidaBuffer.length === senhaEsperadaBuffer.length &&
+        crypto.timingSafeEqual(
+          senhaRecebidaBuffer,
+          senhaEsperadaBuffer
+        );
+
+      if (!senhaValida) {
+        res.writeHead(401, {
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+
+        return res.end(JSON.stringify({
+          erro: 'Senha incorreta.'
+        }));
+      }
+
+      // Token assinado, válido por 1 hora
+      const expiracao = Date.now() + 60 * 60 * 1000;
+      const payload = Buffer.from(
+        JSON.stringify({ exp: expiracao })
+      ).toString('base64url');
+
+      const assinatura = crypto
+        .createHmac('sha256', process.env.ADMIN_SECRET)
+        .update(payload)
+        .digest('base64url');
+
+      const token = `${payload}.${assinatura}`;
+
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8'
+      });
+
+      return res.end(JSON.stringify({
+        sucesso: true,
+        token,
+        expiraEm: expiracao
+      }));
+    } catch (erro) {
+      res.writeHead(400, {
+        'Content-Type': 'application/json; charset=utf-8'
+      });
+
+      return res.end(JSON.stringify({
+        erro: 'Não foi possível processar o login.'
+      }));
+    }
+  }
+
+  // Demais rotas ainda não estão disponíveis
+  res.writeHead(404, {
+    'Content-Type': 'application/json; charset=utf-8'
+  });
+
+  res.end(JSON.stringify({
+    erro: 'Rota não encontrada.'
+  }));
+});
+
+const wss = new WebSocket.Server({
+  server,
+  maxPayload: 2048
+});
 
     return res.end(
       `ELITE STRIKE X1 - Servidor online! Salas: ${salas.size} | Perfis nesta sessão: ${perfis.size}`
