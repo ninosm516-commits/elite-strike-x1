@@ -677,6 +677,133 @@ return res.end(JSON.stringify({
 
 }
 
+// Ações administrativas — todas exigem autenticação
+if (req.method === 'POST' && url.pathname === '/admin/player/action') {
+if (!validarTokenADM(req)) {
+res.writeHead(401, {
+'Content-Type': 'application/json; charset=utf-8'
+});
+return res.end(JSON.stringify({ erro: 'Token inválido ou expirado.' }));
+}
+
+let body = '';
+
+try {
+  for await (const chunk of req) {
+    body += chunk;
+    if (body.length > 8192) {
+      res.writeHead(413);
+      return res.end(JSON.stringify({ erro: 'Requisição muito grande.' }));
+    }
+  }
+
+  const dados = JSON.parse(body || '{}');
+  const { id, acao } = dados;
+
+  if (typeof id !== 'string' || !/^\d{8}$/.test(id)) {
+    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({ erro: 'ID deve conter 8 dígitos.' }));
+  }
+
+  const perfil = perfis.get(id);
+
+  if (!perfil) {
+    res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({
+      erro: 'Jogador não encontrado na memória atual do servidor.'
+    }));
+  }
+
+  perfil.diamantes ??= 0;
+  perfil.skins ??= [];
+  perfil.verificado ??= false;
+  perfil.correio ??= [];
+
+  if (acao === 'definir_diamantes' ||
+      acao === 'adicionar_diamantes' ||
+      acao === 'retirar_diamantes') {
+    const quantidade = dados.quantidade;
+
+    if (!Number.isSafeInteger(quantidade) || quantidade < 0) {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ erro: 'Quantidade inválida.' }));
+    }
+
+    let novoSaldo;
+
+    if (acao === 'definir_diamantes') {
+      novoSaldo = quantidade;
+    } else if (acao === 'adicionar_diamantes') {
+      novoSaldo = perfil.diamantes + quantidade;
+    } else {
+      novoSaldo = perfil.diamantes - quantidade;
+    }
+
+    if (!Number.isSafeInteger(novoSaldo) || novoSaldo < 0) {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ erro: 'Saldo insuficiente ou inválido.' }));
+    }
+
+    perfil.diamantes = novoSaldo;
+  } else if (acao === 'adicionar_skin' || acao === 'remover_skin') {
+    if (typeof dados.skin !== 'string' ||
+        !/^[a-zA-Z0-9_-]{1,80}$/.test(dados.skin)) {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ erro: 'Identificador de skin inválido.' }));
+    }
+
+    if (acao === 'adicionar_skin') {
+      if (!perfil.skins.includes(dados.skin)) {
+        perfil.skins.push(dados.skin);
+      }
+    } else {
+      perfil.skins = perfil.skins.filter(s => s !== dados.skin);
+    }
+  } else if (acao === 'definir_verificado') {
+    if (typeof dados.ativo !== 'boolean') {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ erro: 'Informe ativo: true ou false.' }));
+    }
+
+    perfil.verificado = dados.ativo;
+  } else if (acao === 'enviar_correio') {
+    if (typeof dados.mensagem !== 'string' ||
+        dados.mensagem.trim().length < 1 ||
+        dados.mensagem.length > 500) {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ erro: 'Mensagem deve ter entre 1 e 500 caracteres.' }));
+    }
+
+    perfil.correio.push({
+      id: crypto.randomUUID(),
+      mensagem: dados.mensagem.trim(),
+      data: new Date().toISOString(),
+      lida: false
+    });
+  } else {
+    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({ erro: 'Ação desconhecida.' }));
+  }
+
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+  return res.end(JSON.stringify({
+    sucesso: true,
+    jogador: {
+      id: perfil.id,
+      nome: perfil.nome,
+      diamantes: perfil.diamantes,
+      skins: perfil.skins,
+      verificado: perfil.verificado,
+      correio: perfil.correio
+    }
+  }));
+} catch (erro) {
+  res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+  return res.end(JSON.stringify({ erro: 'JSON inválido ou erro ao processar a ação.' }));
+}
+
+}
+
 // Demais rotas ainda não estão disponíveis
   res.writeHead(404, {
     'Content-Type': 'application/json; charset=utf-8'
