@@ -485,6 +485,40 @@ function sair(ws, aviso) {
   lobby(s);
 }
 
+function validarTokenADM(req) {
+const autorizacao = req.headers.authorization || '';
+const partes = autorizacao.match(/^Bearer ([^.]+).([^.]+)$/);
+
+if (!partes || !process.env.ADMIN_SECRET) {
+return false;
+}
+
+try {
+const [payload, assinatura] = [partes[1], partes[2]];
+
+const assinaturaEsperada = crypto
+  .createHmac('sha256', process.env.ADMIN_SECRET)
+  .update(payload)
+  .digest('base64url');
+
+const a = Buffer.from(assinatura);
+const b = Buffer.from(assinaturaEsperada);
+
+if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+  return false;
+}
+
+const dados = JSON.parse(
+  Buffer.from(payload, 'base64url').toString('utf8')
+);
+
+return Number.isFinite(dados.exp) && dados.exp > Date.now();
+
+} catch {
+return false;
+}
+}
+
 // SERVIDOR HTTP
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
