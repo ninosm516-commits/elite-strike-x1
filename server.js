@@ -626,7 +626,58 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // Demais rotas ainda não estão disponíveis
+  // Consultar jogador pelo ID — exige token ADM válido
+if (req.method === 'GET' && url.pathname === '/admin/player') {
+if (!validarTokenADM(req)) {
+res.writeHead(401, {
+'Content-Type': 'application/json; charset=utf-8'
+});
+
+  return res.end(JSON.stringify({
+    erro: 'Acesso não autorizado. Faça login novamente.'
+  }));
+}
+
+const id = url.searchParams.get('id');
+
+if (!id || !/^\d{8}$/.test(id)) {
+  res.writeHead(400, {
+    'Content-Type': 'application/json; charset=utf-8'
+  });
+
+  return res.end(JSON.stringify({
+    erro: 'Informe um ID de jogador com 8 dígitos.'
+  }));
+}
+
+const perfil = perfis.get(id);
+
+if (!perfil) {
+  res.writeHead(404, {
+    'Content-Type': 'application/json; charset=utf-8'
+  });
+
+  return res.end(JSON.stringify({
+    erro: 'Jogador não encontrado nesta sessão do servidor.'
+  }));
+}
+
+res.writeHead(200, {
+  'Content-Type': 'application/json; charset=utf-8'
+});
+
+return res.end(JSON.stringify({
+  id: perfil.id,
+  nome: perfil.nome,
+  diamantes: perfil.diamantes ?? 0,
+  skins: perfil.skins ?? [],
+  verificado: perfil.verificado ?? false,
+  correio: perfil.correio ?? []
+}));
+
+}
+
+// Demais rotas ainda não estão disponíveis
   res.writeHead(404, {
     'Content-Type': 'application/json; charset=utf-8'
   });
