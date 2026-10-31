@@ -33,13 +33,7 @@ const ARMAS = [
 const CAB = 2;
 const salas = new Map();
 const perfis = new Map();
-// ===== SISTEMA ADM ELITE STRIKE X1 =====
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-const ADMIN_SECRET = process.env.ADMIN_SECRET;
 
-if (!ADMIN_PASSWORD || !ADMIN_SECRET) {
-  console.warn('AVISO: variáveis ADM não configuradas!');
-}
 const ALFA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 const num = (v, a, b, d = 0) =>
@@ -485,339 +479,13 @@ function sair(ws, aviso) {
   lobby(s);
 }
 
-function validarTokenADM(req) {
-const autorizacao = req.headers.authorization || '';
-const partes = autorizacao.match(/^Bearer ([^.]+).([^.]+)$/);
-
-if (!partes || !process.env.ADMIN_SECRET) {
-return false;
-}
-
-try {
-const [payload, assinatura] = [partes[1], partes[2]];
-
-const assinaturaEsperada = crypto
-  .createHmac('sha256', process.env.ADMIN_SECRET)
-  .update(payload)
-  .digest('base64url');
-
-const a = Buffer.from(assinatura);
-const b = Buffer.from(assinaturaEsperada);
-
-if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-  return false;
-}
-
-const dados = JSON.parse(
-  Buffer.from(payload, 'base64url').toString('utf8')
-);
-
-return Number.isFinite(dados.exp) && dados.exp > Date.now();
-
-} catch {
-return false;
-}
-}
-
 // SERVIDOR HTTP
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-
-  res.setHeader('Cache-Control', 'no-store');
-
-  // Verificação de funcionamento do servidor
-  if (req.method === 'GET' &&
-      (url.pathname === '/' || url.pathname === '/health')) {
+const server = http.createServer((req, res) => {
+  if (req.url === '/health' || req.url === '/') {
     res.writeHead(200, {
-      'Content-Type': 'text/plain; charset=utf-8'
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store'
     });
-
-    return res.end(
-      `ELITE STRIKE X1 - Servidor online! Salas: ${salas.size} | Perfis nesta sessão: ${perfis.size}`
-    );
-  }
-
-  // Rota de login do painel ADM
-  if (req.method === 'POST' && url.pathname === '/admin/login') {
-    let body = '';
-
-    try {
-      for await (const chunk of req) {
-        body += chunk;
-
-        if (body.length > 4096) {
-          res.writeHead(413);
-          return res.end('Requisição muito grande');
-        }
-      }
-
-      const dados = JSON.parse(body || '{}');
-
-      if (
-        typeof process.env.ADMIN_PASSWORD !== 'string' ||
-        !process.env.ADMIN_PASSWORD ||
-        typeof process.env.ADMIN_SECRET !== 'string' ||
-        process.env.ADMIN_SECRET.length < 32
-      ) {
-        res.writeHead(500, {
-          'Content-Type': 'application/json; charset=utf-8'
-        });
-
-        return res.end(JSON.stringify({
-          erro: 'Configure ADMIN_PASSWORD e ADMIN_SECRET no Render.'
-        }));
-      }
-
-      const senhaRecebida =
-        typeof dados.senha === 'string' ? dados.senha : '';
-
-      const senhaEsperada = process.env.ADMIN_PASSWORD;
-
-      const senhaRecebidaBuffer = Buffer.from(senhaRecebida);
-      const senhaEsperadaBuffer = Buffer.from(senhaEsperada);
-
-      const senhaValida =
-        senhaRecebidaBuffer.length === senhaEsperadaBuffer.length &&
-        crypto.timingSafeEqual(
-          senhaRecebidaBuffer,
-          senhaEsperadaBuffer
-        );
-
-      if (!senhaValida) {
-        res.writeHead(401, {
-          'Content-Type': 'application/json; charset=utf-8'
-        });
-
-        return res.end(JSON.stringify({
-          erro: 'Senha incorreta.'
-        }));
-      }
-
-      // Token assinado, válido por 1 hora
-      const expiracao = Date.now() + 60 * 60 * 1000;
-      const payload = Buffer.from(
-        JSON.stringify({ exp: expiracao })
-      ).toString('base64url');
-
-      const assinatura = crypto
-        .createHmac('sha256', process.env.ADMIN_SECRET)
-        .update(payload)
-        .digest('base64url');
-
-      const token = `${payload}.${assinatura}`;
-
-      res.writeHead(200, {
-        'Content-Type': 'application/json; charset=utf-8'
-      });
-
-      return res.end(JSON.stringify({
-        sucesso: true,
-        token,
-        expiraEm: expiracao
-      }));
-    } catch (erro) {
-      res.writeHead(400, {
-        'Content-Type': 'application/json; charset=utf-8'
-      });
-
-      return res.end(JSON.stringify({
-        erro: 'Não foi possível processar o login.'
-      }));
-    }
-  }
-
-  // Consultar jogador pelo ID — exige token ADM válido
-if (req.method === 'GET' && url.pathname === '/admin/player') {
-if (!validarTokenADM(req)) {
-res.writeHead(401, {
-'Content-Type': 'application/json; charset=utf-8'
-});
-
-  return res.end(JSON.stringify({
-    erro: 'Acesso não autorizado. Faça login novamente.'
-  }));
-}
-
-const id = url.searchParams.get('id');
-
-if (!id || !/^\d{8}$/.test(id)) {
-  res.writeHead(400, {
-    'Content-Type': 'application/json; charset=utf-8'
-  });
-
-  return res.end(JSON.stringify({
-    erro: 'Informe um ID de jogador com 8 dígitos.'
-  }));
-}
-
-const perfil = perfis.get(id);
-
-if (!perfil) {
-  res.writeHead(404, {
-    'Content-Type': 'application/json; charset=utf-8'
-  });
-
-  return res.end(JSON.stringify({
-    erro: 'Jogador não encontrado nesta sessão do servidor.'
-  }));
-}
-
-res.writeHead(200, {
-  'Content-Type': 'application/json; charset=utf-8'
-});
-
-return res.end(JSON.stringify({
-  id: perfil.id,
-  nome: perfil.nome,
-  diamantes: perfil.diamantes ?? 0,
-  skins: perfil.skins ?? [],
-  verificado: perfil.verificado ?? false,
-  correio: perfil.correio ?? []
-}));
-
-}
-
-// Ações administrativas — todas exigem autenticação
-if (req.method === 'POST' && url.pathname === '/admin/player/action') {
-if (!validarTokenADM(req)) {
-res.writeHead(401, {
-'Content-Type': 'application/json; charset=utf-8'
-});
-return res.end(JSON.stringify({ erro: 'Token inválido ou expirado.' }));
-}
-
-let body = '';
-
-try {
-  for await (const chunk of req) {
-    body += chunk;
-    if (body.length > 8192) {
-      res.writeHead(413);
-      return res.end(JSON.stringify({ erro: 'Requisição muito grande.' }));
-    }
-  }
-
-  const dados = JSON.parse(body || '{}');
-  const { id, acao } = dados;
-
-  if (typeof id !== 'string' || !/^\d{8}$/.test(id)) {
-    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-    return res.end(JSON.stringify({ erro: 'ID deve conter 8 dígitos.' }));
-  }
-
-  const perfil = perfis.get(id);
-
-  if (!perfil) {
-    res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
-    return res.end(JSON.stringify({
-      erro: 'Jogador não encontrado na memória atual do servidor.'
-    }));
-  }
-
-  perfil.diamantes ??= 0;
-  perfil.skins ??= [];
-  perfil.verificado ??= false;
-  perfil.correio ??= [];
-
-  if (acao === 'definir_diamantes' ||
-      acao === 'adicionar_diamantes' ||
-      acao === 'retirar_diamantes') {
-    const quantidade = dados.quantidade;
-
-    if (!Number.isSafeInteger(quantidade) || quantidade < 0) {
-      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ erro: 'Quantidade inválida.' }));
-    }
-
-    let novoSaldo;
-
-    if (acao === 'definir_diamantes') {
-      novoSaldo = quantidade;
-    } else if (acao === 'adicionar_diamantes') {
-      novoSaldo = perfil.diamantes + quantidade;
-    } else {
-      novoSaldo = perfil.diamantes - quantidade;
-    }
-
-    if (!Number.isSafeInteger(novoSaldo) || novoSaldo < 0) {
-      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ erro: 'Saldo insuficiente ou inválido.' }));
-    }
-
-    perfil.diamantes = novoSaldo;
-  } else if (acao === 'adicionar_skin' || acao === 'remover_skin') {
-    if (typeof dados.skin !== 'string' ||
-        !/^[a-zA-Z0-9_-]{1,80}$/.test(dados.skin)) {
-      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ erro: 'Identificador de skin inválido.' }));
-    }
-
-    if (acao === 'adicionar_skin') {
-      if (!perfil.skins.includes(dados.skin)) {
-        perfil.skins.push(dados.skin);
-      }
-    } else {
-      perfil.skins = perfil.skins.filter(s => s !== dados.skin);
-    }
-  } else if (acao === 'definir_verificado') {
-    if (typeof dados.ativo !== 'boolean') {
-      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ erro: 'Informe ativo: true ou false.' }));
-    }
-
-    perfil.verificado = dados.ativo;
-  } else if (acao === 'enviar_correio') {
-    if (typeof dados.mensagem !== 'string' ||
-        dados.mensagem.trim().length < 1 ||
-        dados.mensagem.length > 500) {
-      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ erro: 'Mensagem deve ter entre 1 e 500 caracteres.' }));
-    }
-
-    perfil.correio.push({
-      id: crypto.randomUUID(),
-      mensagem: dados.mensagem.trim(),
-      data: new Date().toISOString(),
-      lida: false
-    });
-  } else {
-    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-    return res.end(JSON.stringify({ erro: 'Ação desconhecida.' }));
-  }
-
-  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-  return res.end(JSON.stringify({
-    sucesso: true,
-    jogador: {
-      id: perfil.id,
-      nome: perfil.nome,
-      diamantes: perfil.diamantes,
-      skins: perfil.skins,
-      verificado: perfil.verificado,
-      correio: perfil.correio
-    }
-  }));
-} catch (erro) {
-  res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-  return res.end(JSON.stringify({ erro: 'JSON inválido ou erro ao processar a ação.' }));
-}
-
-}
-
-// Demais rotas ainda não estão disponíveis
-  res.writeHead(404, {
-    'Content-Type': 'application/json; charset=utf-8'
-  });
-
-  res.end(JSON.stringify({
-    erro: 'Rota não encontrada.'
-  }));
-});
-
-const wss = new WebSocket.Server({
-  server,
-  maxPayload: 2048
-});
 
     return res.end(
       `ELITE STRIKE X1 - Servidor online! Salas: ${salas.size} | Perfis nesta sessão: ${perfis.size}`
@@ -897,24 +565,14 @@ wss.on('connection', ws => {
         let perfil = perfis.get(id);
 
         if (!perfil) {
-perfil = {
-id,
-nome: nome(d.nome),
-ws: null,
-amigos: [],
-pedidos: [],
-diamantes: 0,
-skins: [],
-verificado: false,
-correio: []
-};
-}
-
-// Garantir os campos em perfis já existentes
-perfil.diamantes ??= 0;
-perfil.skins ??= [];
-perfil.verificado ??= false;
-perfil.correio ??= [];
+          perfil = {
+            id,
+            nome: nome(d.nome),
+            ws: null,
+            amigos: [],
+            pedidos: []
+          };
+        }
 
         if (
           perfil.ws &&
@@ -1338,10 +996,4 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(
     `ELITE STRIKE X1 online na porta ${PORT}`
   );
-});
-
-const PORT = process.env.PORT || 10000;
-
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`ELITE STRIKE X1 online na porta ${PORT}`);
 });
